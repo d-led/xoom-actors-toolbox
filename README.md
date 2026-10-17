@@ -74,7 +74,8 @@ Run the example, which is exactly this: `mvn install && mvn -f examples/hello co
 The `Publish` workflow pushes every build to GitHub Packages: each push to `main` as
 `0.1.0-SNAPSHOT.<build-number>`, each `v*` tag as that tag's version (`v0.1.0` → `0.1.0`).
 GitHub Packages asks for a token with `read:packages` — your user name, and a personal access token
-as the password.
+as the password. The `verify` job then consumes that package from an empty repository with exactly
+the configuration below, so the next two blocks are exercised on every push.
 
 **Maven** — the repository in `pom.xml`:
 
