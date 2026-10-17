@@ -12,6 +12,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.value }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,3 +41,116 @@ jobs:
           mvn -B deploy -s "${{ github.workspace }}/settings.xml"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Proves the README: an empty project with only the two dependencies, the repository and the
+  # credentials consumes the package that was just published, with no local repository cache.
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: d-led-xoom-actors-toolbox
+          settings-path: ${{ github.workspace }}
+
+      - name: Consume the published package without a local repository cache
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p consumer/src/main/java/demo
+
+          cat > consumer/pom.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <project xmlns="http://maven.apache.org/POM/4.0.0"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>demo</groupId>
+            <artifactId>consumer</artifactId>
+            <version>1.0</version>
+            <properties>
+              <maven.compiler.release>17</maven.compiler.release>
+            </properties>
+            <repositories>
+              <repository>
+                <id>d-led-xoom-actors-toolbox</id>
+                <url>https://maven.pkg.github.com/${GITHUB_REPOSITORY}</url>
+              </repository>
+            </repositories>
+            <dependencies>
+              <dependency>
+                <groupId>io.vlingo.xoom</groupId>
+                <artifactId>xoom-actors</artifactId>
+                <version>1.11.1</version>
+              </dependency>
+              <dependency>
+                <groupId>io.vlingo.xoom</groupId>
+                <artifactId>xoom-actors-toolbox</artifactId>
+                <version>${{ needs.publish.outputs.version }}</version>
+              </dependency>
+            </dependencies>
+          </project>
+          EOF
+
+          cat > consumer/src/main/java/demo/Hello.java <<'EOF'
+          package demo;
+
+          import io.vlingo.xoom.actors.toolbox.ActorProtocol;
+          import io.vlingo.xoom.common.Completes;
+
+          @ActorProtocol
+          public interface Hello {
+            Completes<String> hello(String name);
+          }
+          EOF
+
+          cat > consumer/src/main/java/demo/HelloActor.java <<'EOF'
+          package demo;
+
+          import io.vlingo.xoom.actors.Actor;
+          import io.vlingo.xoom.common.Completes;
+
+          public class HelloActor extends Actor implements Hello {
+            @Override
+            public Completes<String> hello(final String name) {
+              return completes().with("Hello, " + name + "!");
+            }
+          }
+          EOF
+
+          cat > consumer/src/main/java/demo/Main.java <<'EOF'
+          package demo;
+
+          import io.vlingo.xoom.actors.World;
+          import io.vlingo.xoom.actors.toolbox.Actors;
+
+          public final class Main {
+            public static void main(final String[] args) {
+              final World world = Actors.world("hello");
+              final Hello hello = Actors.actor(world, Hello.class, HelloActor.class, HelloActor::new);
+
+              final String greeting = hello.hello("World").await();
+              System.out.println(greeting);
+
+              Actors.shutdown(world);
+              System.exit(0);
+            }
+
+            private Main() {
+            }
+          }
+          EOF
+
+          mvn -B -s "${{ github.workspace }}/settings.xml" \
+            -Dmaven.repo.local="$RUNNER_TEMP/m2" \
+            -f consumer/pom.xml compile \
+            org.codehaus.mojo:exec-maven-plugin:3.2.0:exec \
+            -Dexec.executable=java \
+            -Dexec.classpathScope=runtime \
+            -Dexec.args="-cp %classpath demo.Main"
