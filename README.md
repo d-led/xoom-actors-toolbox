@@ -69,13 +69,60 @@ Run the example, which is exactly this: `mvn install && mvn -f examples/hello co
   Lombok does that by patching javac internals. For immutable message types, Lombok (or records) is
   still a good idea; that is your choice, not a dependency of this toolbox.
 
-## Publishing
+## Try it before the official release
 
-```bash
-mvn -B deploy -s settings.xml      # GitHub Packages, see .github/workflows/publish.yml
+The `Publish` workflow pushes every build to GitHub Packages: each push to `main` as
+`0.1.0-SNAPSHOT.<build-number>`, each `v*` tag as that tag's version (`v0.1.0` → `0.1.0`).
+GitHub Packages asks for a token with `read:packages` — your user name, and a personal access token
+as the password.
+
+**Maven** — the repository in `pom.xml`:
+
+```xml
+<repositories>
+  <repository>
+    <id>d-led-xoom-actors-toolbox</id>
+    <url>https://maven.pkg.github.com/d-led/xoom-actors-toolbox</url>
+  </repository>
+</repositories>
 ```
 
-Set `<github.repository>` in `pom.xml` to the `<owner>/<repo>` you publish to.
+and the credentials in `~/.m2/settings.xml`:
+
+```xml
+<servers>
+  <server>
+    <id>d-led-xoom-actors-toolbox</id>
+    <username>YOUR_GITHUB_USERNAME</username>
+    <password>YOUR_GITHUB_TOKEN</password>
+  </server>
+</servers>
+```
+
+**Gradle** — the same repository and credentials:
+
+```groovy
+repositories {
+  mavenCentral()
+  maven {
+    url = uri("https://maven.pkg.github.com/d-led/xoom-actors-toolbox")
+    credentials {
+      username = System.getenv("GITHUB_ACTOR")
+      password = System.getenv("GITHUB_TOKEN")
+    }
+  }
+}
+
+dependencies {
+  implementation("io.vlingo.xoom:xoom-actors:1.11.1")
+  implementation("io.vlingo.xoom:xoom-actors-toolbox:0.1.0")
+}
+```
+
+## Releasing
+
+Pushing a `v*` tag publishes that version, for example `git tag v0.1.0 && git push origin v0.1.0`.
+By hand: `mvn -B deploy -s settings.xml`.
 
 ## Building
 

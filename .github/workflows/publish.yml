@@ -1,8 +1,9 @@
 name: Publish
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -22,10 +23,19 @@ jobs:
           server-id: github
           settings-path: ${{ github.workspace }}
 
-      - name: Test
-        run: mvn -B test
+      # A tag publishes that tag's version; main publishes a snapshot of it.
+      - name: Decide the version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.1.0-SNAPSHOT.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Publish to GitHub Packages
-        run: mvn -B deploy -s ${{ github.workspace }}/settings.xml
+      - name: Publish ${{ steps.version.outputs.value }}
+        run: |
+          mvn -B versions:set -DnewVersion="${{ steps.version.outputs.value }}" -DgenerateBackupPoms=false
+          mvn -B deploy -s "${{ github.workspace }}/settings.xml"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
