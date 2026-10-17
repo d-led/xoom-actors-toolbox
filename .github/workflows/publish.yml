@@ -154,3 +154,44 @@ jobs:
             -Dexec.executable=java \
             -Dexec.classpathScope=runtime \
             -Dexec.args="-cp %classpath demo.Main"
+
+      - name: Consume the published package with Gradle, as the README shows
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          mkdir -p consumer-gradle/src/main/java/demo
+          cp consumer/src/main/java/demo/*.java consumer-gradle/src/main/java/demo/
+
+          cat > consumer-gradle/settings.gradle <<'EOF'
+          rootProject.name = 'consumer'
+          EOF
+
+          cat > consumer-gradle/build.gradle <<EOF
+          plugins {
+            id 'application'
+          }
+
+          repositories {
+            mavenCentral()
+            maven {
+              url = uri("https://maven.pkg.github.com/${GITHUB_REPOSITORY}")
+              credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+              }
+            }
+          }
+
+          dependencies {
+            implementation("io.vlingo.xoom:xoom-actors:1.11.1")
+            implementation("io.vlingo.xoom:xoom-actors-toolbox:${{ needs.publish.outputs.version }}")
+          }
+
+          application {
+            mainClass = 'demo.Main'
+          }
+          EOF
+
+          GRADLE_USER_HOME="$RUNNER_TEMP/gradle-home" gradle --no-daemon -q -p consumer-gradle run | tee gradle.log
+          grep -q "Hello, World!" gradle.log
